@@ -11,13 +11,15 @@ from typing import Dict, List, Tuple, Optional
 
 EARTH_RADIUS = 6371.0  # km
 
-
+# Updated to contain earliest and latest attributes
 class Node:
     """Represents a node in the graph"""
-    def __init__(self, node_id: int, lat: float, lon: float):
+    def __init__(self, node_id: int, lat: float, lon: float, earl: int, late: int):
         self.id = node_id
         self.lat = lat
         self.lon = lon
+        self.earliest = earl
+        self.latest = late
 
 
 class Edge:
@@ -26,16 +28,16 @@ class Edge:
         self.to = to
         self.weight = weight
 
-
+# Updated add_node method to work with earliest and latest attributes
 class Graph:
     """Graph data structure with adjacency list"""
     def __init__(self):
         self.nodes: Dict[int, Node] = {}
         self.adj_list: Dict[int, List[Edge]] = {}
     
-    def add_node(self, node_id: int, lat: float, lon: float):
+    def add_node(self, node_id: int, lat: float, lon: float, earl: int, late: int):
         """Add a node to the graph"""
-        self.nodes[node_id] = Node(node_id, lat, lon)
+        self.nodes[node_id] = Node(node_id, lat, lon, earl, late)
         if node_id not in self.adj_list:
             self.adj_list[node_id] = []
     
@@ -97,6 +99,45 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
     
     return dist, prev, nodes_explored
 
+# Modified Dijkstra's algorithm to support time windows
+def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
+    """
+    Dijkstra's algorithm for shortest path
+    Returns: (distances, previous nodes, nodes explored)
+    """
+    dist = {node_id: float('inf') for node_id in graph.nodes}
+    prev = {node_id: None for node_id in graph.nodes}
+    dist[start] = 0
+    
+    pq = [(0, start)]
+    nodes_explored = 0
+    visited = set()
+    
+    while pq:
+        current_dist, u = heapq.heappop(pq)
+        
+        if u in visited:
+            continue
+        
+        visited.add(u)
+        nodes_explored += 1
+        
+        if u == end:
+            break
+        
+        if current_dist > dist[u]:
+            continue
+        
+        for edge in graph.adj_list.get(u, []):
+            v = edge.to
+            alt = dist[u] + edge.weight
+            
+            if alt < dist[v]:
+                dist[v] = alt
+                prev[v] = u
+                heapq.heappush(pq, (alt, v))
+    
+    return dist, prev, nodes_explored
 
 def astar(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
     """
@@ -213,7 +254,7 @@ def print_path(graph: Graph, prev: Dict[int, Optional[int]], start: int, end: in
     print(f"Path from {start} to {end}: {path_str}")
     print(f"Total distance: {distance:.2f} km")
 
-
+# Updated to include the time constraints of nodes
 def load_graph(nodes_file: str, edges_file: str) -> Graph:
     """Load graph from CSV files"""
     graph = Graph()
@@ -225,7 +266,9 @@ def load_graph(nodes_file: str, edges_file: str) -> Graph:
             node_id = int(row['id'])
             lat = float(row['lat'])
             lon = float(row['lon'])
-            graph.add_node(node_id, lat, lon)
+            earl = int(row['earliest'])
+            late = int(row['latest'])
+            graph.add_node(node_id, lat, lon, earl, late)
     
     # Load edges
     with open(edges_file, 'r') as f:
