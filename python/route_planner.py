@@ -68,7 +68,9 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
     dist = {node_id: float('inf') for node_id in graph.nodes}
     prev = {node_id: None for node_id in graph.nodes}
     dist[start] = 0
-    
+
+    print(prev)
+
     pq = [(0, start)]
     nodes_explored = 0
     visited = set()
@@ -97,10 +99,11 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
                 prev[v] = u
                 heapq.heappush(pq, (alt, v))
     
+    print(prev)
     return dist, prev, nodes_explored
 
 # Modified Dijkstra's algorithm to support time windows
-def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
+def dijkstraTimeWindow(graph: Graph, start: int, end: int):
     """
     Dijkstra's algorithm for shortest path
     Returns: (distances, previous nodes, nodes explored)
@@ -108,36 +111,59 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
     dist = {node_id: float('inf') for node_id in graph.nodes}
     prev = {node_id: None for node_id in graph.nodes}
     dist[start] = 0
-    
-    pq = [(0, start)]
-    nodes_explored = 0
+    violations = []
+
+    # Queue the start node and the earliest it can start
+    pq = [(graph.nodes[start].earliest, start)]
+    nodesExplored = 0
     visited = set()
     
     while pq:
-        current_dist, u = heapq.heappop(pq)
-        
-        if u in visited:
+        currentDist, currentNodeID = heapq.heappop(pq)
+        currentNode = graph.nodes[currentNode]
+
+        if currentNodeID in visited:
             continue
         
-        visited.add(u)
-        nodes_explored += 1
+        visited.add(currentNodeID)
+        nodesExplored += 1
         
-        if u == end:
-            break
-        
-        if current_dist > dist[u]:
+        if currentDist < currentNode.earliest:
+            # Wait until the earliest arrival time
+            currentDist = currentNode.earliest
+        elif currentDist > currentNode.latest:
+            # violations.append(f"Node \"{currentNodeID}\" cannot be used. Arrival time ({currentDist}) greater than latest departure ({currentNode.latest})\n")
             continue
+
+        if currentNodeID == end:
+            return dist, prev, nodesExplored, violations
         
         for edge in graph.adj_list.get(u, []):
             v = edge.to
-            alt = dist[u] + edge.weight
+            alt = dist[currentNodeID] + edge.weight
             
             if alt < dist[v]:
                 dist[v] = alt
-                prev[v] = u
+                prev[v] = currentNodeID
                 heapq.heappush(pq, (alt, v))
     
-    return dist, prev, nodes_explored
+    # Failed to find a path
+    violations.append("No feasible path satisfying time constraints")
+
+    # Find closest path
+    
+    return dist, prev, nodesExplored, violations
+
+def closestPath(graph: Graph, start: int, end):
+    dist = {node_id: float('inf') for node_id in graph.nodes}
+    prev = {node_id: None for node_id in graph.nodes}
+    dist[start] = 0
+    violations = []
+
+    # Queue the start node and the earliest it can start
+    pq = [(graph.nodes[start].earliest, start)]
+    nodesExplored = 0
+    visited = set()
 
 def astar(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
     """
