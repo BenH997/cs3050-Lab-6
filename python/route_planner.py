@@ -21,7 +21,6 @@ class Node:
         self.earliest = earl
         self.latest = late
 
-
 class Edge:
     """Represents an edge in the graph"""
     def __init__(self, to: int, weight: float):
@@ -47,7 +46,6 @@ class Graph:
             self.adj_list[from_id] = []
         self.adj_list[from_id].append(Edge(to_id, weight))
 
-
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate haversine distance between two points"""
     dlat = math.radians(lat2 - lat1)
@@ -68,8 +66,6 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
     dist = {node_id: float('inf') for node_id in graph.nodes}
     prev = {node_id: None for node_id in graph.nodes}
     dist[start] = 0
-
-    print(prev)
 
     pq = [(0, start)]
     nodes_explored = 0
@@ -98,72 +94,146 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
                 dist[v] = alt
                 prev[v] = u
                 heapq.heappush(pq, (alt, v))
-    
-    print(prev)
+
     return dist, prev, nodes_explored
+
+def closestPath(graph: Graph, start: int, end: int):
+    dist = {node_id: float('inf') for node_id in graph.nodes}
+    prev = {node_id: None for node_id in graph.nodes}
+
+    # Keep track of violations
+    violations = {node_id: float('inf') for node_id in graph.nodes}
+    violations[start] = 0
+
+    dist[start] = 0
+    
+    # Queue for (current time, current violation, nodeID)
+    pq = [(0, 0, start)]
+    nodesExplored = 0
+
+    while pq:
+        time, currV, u = heapq.heappop(pq)
+        nodesExplored += 1
+
+        # End reached
+        if u == end:
+            return dist, prev, nodesExplored, violations
+
+        # Queue adjacent nodes and test for violations
+        for edge in graph.adj_list[u]:
+            v = edge.to
+            edgeTime = time + edge.weight
+
+            node = graph.nodes[v]
+
+            # Test for violations
+            early = node.earliest - edgeTime
+            late = edgeTime - node.latest
+            if early < 0:
+                early = 0
+            if late < 0:
+                late = 0
+
+            newViolation = currV + early + late
+
+            # Relax if new time is better or violation is better
+            if (edgeTime < dist[v]) or (newViolation < violations[v]):
+                dist[v] = edgeTime
+                violations[v] = newViolation
+                prev[v] = u
+                heapq.heappush(pq, (edgeTime, newViolation, v))
+
+    # No closest path found either
+    return dist, prev, nodesExplored, violations
 
 # Modified Dijkstra's algorithm to support time windows
 def dijkstraTimeWindow(graph: Graph, start: int, end: int):
-    """
-    Dijkstra's algorithm for shortest path
-    Returns: (distances, previous nodes, nodes explored)
-    """
-    dist = {node_id: float('inf') for node_id in graph.nodes}
-    prev = {node_id: None for node_id in graph.nodes}
+    dist = {n: float('inf') for n in graph.nodes}
+    prev = {n: None for n in graph.nodes}
     dist[start] = 0
-    violations = []
 
-    # Queue the start node and the earliest it can start
-    pq = [(graph.nodes[start].earliest, start)]
-    nodesExplored = 0
+    pq = [(0, start)]
     visited = set()
-    
+    nodesExplored = 0
+
     while pq:
-        currentDist, currentNodeID = heapq.heappop(pq)
-        currentNode = graph.nodes[currentNode]
-
-        if currentNodeID in visited:
-            continue
-        
-        visited.add(currentNodeID)
+        time, node = heapq.heappop(pq)
         nodesExplored += 1
-        
-        if currentDist < currentNode.earliest:
-            # Wait until the earliest arrival time
-            currentDist = currentNode.earliest
-        elif currentDist > currentNode.latest:
-            # violations.append(f"Node \"{currentNodeID}\" cannot be used. Arrival time ({currentDist}) greater than latest departure ({currentNode.latest})\n")
+
+        if node in visited:
             continue
+        visited.add(node)
 
-        if currentNodeID == end:
-            return dist, prev, nodesExplored, violations
+        node = graph.nodes[node]
+
+        # Skip if late
+        if time < node.earliest:
+            time = node.earliest
+        if time > node.latest:
+            continue
         
-        for edge in graph.adj_list.get(u, []):
-            v = edge.to
-            alt = dist[currentNodeID] + edge.weight
-            
-            if alt < dist[v]:
-                dist[v] = alt
-                prev[v] = currentNodeID
-                heapq.heappush(pq, (alt, v))
-    
-    # Failed to find a path
-    violations.append("No feasible path satisfying time constraints")
+        # End reached with no violations
+        if node == end:
+            return dist, prev, nodesExplored, None
 
+        # Queue adjacent nodes
+        for edge in graph.adj_list.get(node, []):
+            v = edge.to
+            newT = time + edge.weight
+
+            if newT < dist[v]:
+                dist[v] = newT
+                prev[v] = node
+                heapq.heappush(pq, (newT, v))
+
+    # Failed to find feasable path
     # Find closest path
-    
+    dist, prev, nodesExplored, violations = closestPath(graph, start, end)
     return dist, prev, nodesExplored, violations
 
-def closestPath(graph: Graph, start: int, end):
-    dist = {node_id: float('inf') for node_id in graph.nodes}
-    prev = {node_id: None for node_id in graph.nodes}
-    dist[start] = 0
+def multiDestinationPriority(graph: Graph, start: int, destinations: Dict[int, str]):
+    path = [start]
+    totalTravel = 0
+    fromNode = start
+    toNode = start
     violations = []
 
-    # Queue the start node and the earliest it can start
-    pq = [(graph.nodes[start].earliest, start)]
-    nodesExplored = 0
-    visited = set()
+    # Separate nodes based on priority
+    highs = []
+    meds = []
+    lows = []
+    
+    keys = list(destinations.keys())
+    for node in keys:
+        if destinations[node] == "HIGH":
+            highs.append(node)
+        elif destinations[node] == "MEDIUM":
+            meds.append(node)
+        else:
+            lows.append(node)
+
+
+    # for node in destinations:
+    #     toNode = node
+
+    #     dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
+        
+    #     totalTravel += dist[toNode]
+
+    #     subPath = reconstruct_path(prev, fromNode, toNode)
+    #     if subPath != None:
+    #         subPath.remove(subPath[0])
+    #     else:
+    #         violations.append(f"Node {toNode} unreachable from {fromNode}")
+    #         break
+        
+    #     for x in subPath:
+    #         path.append(x)
+
+    #     fromNode = toNode
+        
+    # print(path)
+        
 
 def astar(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
     """
@@ -311,7 +381,7 @@ def load_graph(nodes_file: str, edges_file: str) -> Graph:
 def main():
     if len(sys.argv) != 6:
         print(f"Usage: {sys.argv[0]} <nodes.csv> <edges.csv> <start_node> <end_node> <algorithm>")
-        print("Algorithms: dijkstra, astar, bellman-ford")
+        print("Algorithms: dijkstra, dijkstraTimeWindow astar, bellman-ford")
         sys.exit(1)
     
     nodes_file = sys.argv[1]
@@ -341,15 +411,52 @@ def main():
         if dist is None:
             print("Negative cycle detected!")
             sys.exit(1)
+    elif algorithm == "dijkstraTimeWindows":
+        print("=== Dijkstra's Algorithm with time windows ===")
+        dist, prev, nodes_explored, violations = dijkstraTimeWindow(graph, start_node, end_node)
+    elif algorithm == "multiDestinationPriority":
+        """
+        Maybe have an option to load destinations from a file or manually????????
+        Will eventually ask for the start node via input()
+        Will then ask for following destinations to visit
+        **** Will ask for priority of each node
+        """
+        temp = {
+            6: "HIGH",
+            3: "MEDIUM",
+            6: "LOW"
+        }
+
+        multiDestinationPriority(graph, start_node, temp)
     else:
         print(f"Unknown algorithm: {algorithm}")
-        print("Available algorithms: dijkstra, astar, bellman-ford")
+        print("Available algorithms: dijkstra, dijkstraTimeWindows, astar, bellman-ford")
         sys.exit(1)
     
     # Print results
-    print_path(graph, prev, start_node, end_node, dist[end_node])
-    print(f"Nodes explored: {nodes_explored}")
+    if algorithm == "dijkstraTimeWindows" and violations != None:
+        print("No feasable path found satisfying time conditions. Closest path will be provided instead:")
+        printClosestPath(prev, start_node, end_node, dist[end_node], violations)
+    elif False: # CHANGE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! else:
+        print_path(graph, prev, start_node, end_node, dist[end_node])
+        print(f"Nodes explored: {nodes_explored}")
 
+# Prints a path including violations and distance traveled
+def printClosestPath(prev: Dict[int, Optional[int]], start: int, end: int, distance: float, violations: Dict[int, str]):
+    print(f"Path from {start} to {end}: ", end='')
+
+    path = reconstruct_path(prev, start, end)
+    
+    for node in path:
+        if node == start:
+            print(f"{node} -> ", end='')
+        elif node == end:
+            print(f"{node}({violations[node]} units early/late)")
+        else:
+            print(f"{node}({violations[node]} units early/late) -> ", end='')
+
+    print(f"Total distance: {distance} km")
+    
 
 if __name__ == "__main__":
     main()
