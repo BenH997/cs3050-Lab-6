@@ -194,46 +194,74 @@ def dijkstraTimeWindow(graph: Graph, start: int, end: int):
 def multiDestinationPriority(graph: Graph, start: int, destinations: Dict[int, str]):
     path = [start]
     totalTravel = 0
+    totalNodesVisited = 0
     fromNode = start
     toNode = start
     violations = []
 
     # Separate nodes based on priority
-    highs = []
-    meds = []
-    lows = []
+    highNodes = []
+    medNodes = []
+    lowNodes = []
     
-    keys = list(destinations.keys())
-    for node in keys:
-        if destinations[node] == "HIGH":
-            highs.append(node)
-        elif destinations[node] == "MEDIUM":
-            meds.append(node)
+    # Construct different lists of priorities
+    for index in range(len(destinations[0])):
+        if destinations[1][index] == "HIGH":
+            highNodes.append(destinations[0][index])
+        elif destinations[1][index] == "MEDIUM":
+            medNodes.append(destinations[0][index])
         else:
-            lows.append(node)
+            lowNodes.append(destinations[0][index])
 
+    nodeLists = (highNodes, medNodes, lowNodes)
 
-    # for node in destinations:
-    #     toNode = node
+    # Find path which visits all nodes
+    for nodes in nodeLists:
+        while len(nodes) > 0:
+            fromNode = path[-1]
 
-    #     dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
-        
-    #     totalTravel += dist[toNode]
+            bestDist = float('inf')
+            bestPrev = {}
+            bestNodesExplored = 0
+            bestToNode = 0
 
-    #     subPath = reconstruct_path(prev, fromNode, toNode)
-    #     if subPath != None:
-    #         subPath.remove(subPath[0])
-    #     else:
-    #         violations.append(f"Node {toNode} unreachable from {fromNode}")
-    #         break
-        
-    #     for x in subPath:
-    #         path.append(x)
+            for node in nodes:
+                toNode = node
 
-    #     fromNode = toNode
-        
-    # print(path)
-        
+                dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
+
+                if (dist[fromNode] < bestDist):
+                    bestDist = dist[fromNode]
+                    bestPrev = prev
+                    bestNodesExplored = nodesExplored
+                    bestToNode = toNode
+
+            # Best path found so it will be taken
+            subPath = reconstruct_path(bestPrev, fromNode, bestToNode)
+
+            # Deal with no path found
+            if subPath != None:
+                for node in subPath:
+                    if node == subPath[0]:
+                        continue
+
+                    path.append(node)
+            else:
+                violations.append(f"Node {bestToNode} unreachable from {fromNode}.")
+
+            nodes.remove(nodes[0])
+            
+            # If already visited remove from nodes to visit
+            for priorityList in nodeLists:
+                for node in priorityList:
+                    if node in path:
+                        priorityList.remove(node)
+
+    print(violations)
+    print(path)
+
+    # Todo: return valid path specs
+    return  
 
 def astar(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
     """
@@ -421,11 +449,10 @@ def main():
         Will then ask for following destinations to visit
         **** Will ask for priority of each node
         """
-        temp = {
-            6: "HIGH",
-            3: "MEDIUM",
-            6: "LOW"
-        }
+        nodes = [5, 2, 4]
+        priorities = ["HIGH", "LOW", "MEDIUM"]
+
+        temp = (nodes, priorities)
 
         multiDestinationPriority(graph, start_node, temp)
     else:
@@ -437,7 +464,7 @@ def main():
     if algorithm == "dijkstraTimeWindows" and violations != None:
         print("No feasable path found satisfying time conditions. Closest path will be provided instead:")
         printClosestPath(prev, start_node, end_node, dist[end_node], violations)
-    elif False: # CHANGE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! else:
+    elif False: # CHANGE LATER!!!
         print_path(graph, prev, start_node, end_node, dist[end_node])
         print(f"Nodes explored: {nodes_explored}")
 
