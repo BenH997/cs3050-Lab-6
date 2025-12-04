@@ -97,17 +97,16 @@ def dijkstra(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict
 
     return dist, prev, nodes_explored
 
+# Finds path with minimal time constraint violations
 def closestPath(graph: Graph, start: int, end: int):
-    dist = {node_id: float('inf') for node_id in graph.nodes}
-    prev = {node_id: None for node_id in graph.nodes}
-
-    # Keep track of violations
-    violations = {node_id: float('inf') for node_id in graph.nodes}
-    violations[start] = 0
+    dist = {n: float('inf') for n in graph.nodes}
+    prev = {n: None for n in graph.nodes}
+    violations = {n: float('inf') for n in graph.nodes}
 
     dist[start] = 0
-    
-    # Queue for (current time, current violation, nodeID)
+    violations[start] = 0
+
+    # Heap to track (arrival_time, total_violation, node_id)
     pq = [(0, 0, start)]
     nodesExplored = 0
 
@@ -115,35 +114,33 @@ def closestPath(graph: Graph, start: int, end: int):
         time, currV, u = heapq.heappop(pq)
         nodesExplored += 1
 
-        # End reached
         if u == end:
             return dist, prev, nodesExplored, violations
 
-        # Queue adjacent nodes and test for violations
+        # Evaluate adjacent edges
         for edge in graph.adj_list[u]:
             v = edge.to
-            edgeTime = time + edge.weight
-
+            arrival = time + edge.weight
             node = graph.nodes[v]
 
-            # Test for violations
-            early = node.earliest - edgeTime
-            late = edgeTime - node.latest
-            if early < 0:
-                early = 0
-            if late < 0:
-                late = 0
+            # Find violation score
+            early = 0
+            late = 0
+            if node.earliest - arrival > 0:
+                early = node.earliest - arrival
+            if arrival - node.latest > 0:
+                late = arrival - node.latest
 
-            newViolation = currV + early + late
+            vertViolation = currV + early + late
 
-            # Relax if new time is better or violation is better
-            if (edgeTime < dist[v]) or (newViolation < violations[v]):
-                dist[v] = edgeTime
-                violations[v] = newViolation
+            # Relax if arrival time is better or violation score is better
+            if arrival < dist[v] or vertViolation < violations[v]:
+                dist[v] = arrival
+                violations[v] = vertViolation
                 prev[v] = u
-                heapq.heappush(pq, (edgeTime, newViolation, v))
+                heapq.heappush(pq, (arrival, vertViolation, v))
 
-    # No closest path found either
+    # Path not found
     return dist, prev, nodesExplored, violations
 
 # Modified Dijkstra's algorithm to support time windows
@@ -157,111 +154,157 @@ def dijkstraTimeWindow(graph: Graph, start: int, end: int):
     nodesExplored = 0
 
     while pq:
-        time, node = heapq.heappop(pq)
+        time, u = heapq.heappop(pq)
         nodesExplored += 1
 
-        if node in visited:
+        if u in visited:
             continue
-        visited.add(node)
+        visited.add(u)
 
-        node = graph.nodes[node]
+        node = graph.nodes[u]
 
-        # Skip if late
+        # Wait if early
         if time < node.earliest:
             time = node.earliest
         if time > node.latest:
             continue
-        
-        # End reached with no violations
-        if node == end:
+
+        if u == end:
             return dist, prev, nodesExplored, None
 
-        # Queue adjacent nodes
-        for edge in graph.adj_list.get(node, []):
+        for edge in graph.adj_list[u]:
             v = edge.to
             newT = time + edge.weight
 
             if newT < dist[v]:
                 dist[v] = newT
-                prev[v] = node
+                prev[v] = u
                 heapq.heappush(pq, (newT, v))
 
     # Failed to find feasable path
     # Find closest path
-    dist, prev, nodesExplored, violations = closestPath(graph, start, end)
-    return dist, prev, nodesExplored, violations
+    dist, prev, explored2, violations = closestPath(graph, start, end)
+    return dist, prev, nodesExplored + explored2, violations
 
-def multiDestinationPriority(graph: Graph, start: int, destinations: Dict[int, str]):
-    path = [start]
-    totalTravel = 0
+def multiDestinationPriority(graph, dests, threshold=None):
+    # Group destinations by priority
+    priorityGroups = {
+        "HIGH": [],
+        "MEDIUM": [],
+        "LOW": []
+    }
+
+    for node, priority in dests:
+        priorityGroups[priority].append(node)
+
+    # Init path with first node
+    path = []
+    for nodes in priorityGroups.values():
+        if len(nodes) > 0:
+            path.append(nodes[0])
+    
+    totalDist = 0
     totalNodesVisited = 0
-    fromNode = start
-    toNode = start
     violations = []
 
-    # Separate nodes based on priority
-    highNodes = []
-    medNodes = []
-    lowNodes = []
-    
-    # Construct different lists of priorities
-    for index in range(len(destinations[0])):
-        if destinations[1][index] == "HIGH":
-            highNodes.append(destinations[0][index])
-        elif destinations[1][index] == "MEDIUM":
-            medNodes.append(destinations[0][index])
-        else:
-            lowNodes.append(destinations[0][index])
-
-    nodeLists = (highNodes, medNodes, lowNodes)
-
-    # Find path which visits all nodes
-    for nodes in nodeLists:
-        while len(nodes) > 0:
+    for priorityLevel in ["HIGH","MEDIUM","LOW"]:
+        while priorityGroups[priorityLevel]:
             fromNode = path[-1]
+            toNode = priorityGroups[priorityLevel][0]
 
-            bestDist = float('inf')
-            bestPrev = {}
-            bestNodesExplored = 0
-            bestToNode = 0
+            dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
 
-            for node in nodes:
-                toNode = node
+            originalDistance = dist[toNode]
 
-                dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
+            if threshold != None:
+                # Violate priority contraints if shorter path is found
+                for lower in ["MEDIUM","LOW"]:
+                    for n in priorityGroups[lower]:
+                        altDist, altPrev, altNodesExplored = dijkstra(graph, fromNode, n)
+                        if altDist[n] < (originalDistance / threshold):
+                            violations.append(f"Visited {n} before {toNode}")
+                            toNode = n
+                            dist = altDist
+                            prev = altPrev
+                            originalDistance = altDist[n]
 
-                if (dist[fromNode] < bestDist):
-                    bestDist = dist[fromNode]
-                    bestPrev = prev
-                    bestNodesExplored = nodesExplored
-                    bestToNode = toNode
-
-            # Best path found so it will be taken
-            subPath = reconstruct_path(bestPrev, fromNode, bestToNode)
-
-            # Deal with no path found
-            if subPath != None:
-                for node in subPath:
-                    if node == subPath[0]:
-                        continue
-
-                    path.append(node)
-            else:
-                violations.append(f"Node {bestToNode} unreachable from {fromNode}.")
-
-            nodes.remove(nodes[0])
+            # Add sub path to main path
+            subPath = reconstruct_path(prev, fromNode, toNode)
             
-            # If already visited remove from nodes to visit
-            for priorityList in nodeLists:
-                for node in priorityList:
-                    if node in path:
-                        priorityList.remove(node)
+            if subPath != None:
+                path.extend(subPath[1:])
+                totalDist += originalDistance
 
-    print(violations)
-    print(path)
+            # Remove visited
+            for priorityList in priorityGroups.values():
+                if toNode in priorityList:
+                    priorityList.remove(toNode)
 
-    # Todo: return valid path specs
-    return  
+    return path, totalDist, violations
+
+# def multiDestinationPriority(graph: Graph, start: int, destinations: Dict[int, str]):
+#     path = [start]
+#     totalTravel = 0
+#     totalNodesVisited = 0
+#     fromNode = start
+#     toNode = start
+#     violations = []
+
+#     # Separate nodes based on priority
+#     highNodes = []
+#     medNodes = []
+#     lowNodes = []
+    
+#     # Construct different lists of priorities
+#     for index in range(len(destinations[0])):
+#         if destinations[1][index] == "HIGH":
+#             highNodes.append(destinations[0][index])
+#         elif destinations[1][index] == "MEDIUM":
+#             medNodes.append(destinations[0][index])
+#         else:
+#             lowNodes.append(destinations[0][index])
+
+#     nodeLists = (highNodes, medNodes, lowNodes)
+
+#     # Construct path which visits all nodes
+#     for nodes in nodeLists:
+#         while len(nodes) > 0:
+#             fromNode = path[-1]
+#             toNode = nodes[0]
+
+#             dist, prev, nodesExplored = dijkstra(graph, fromNode, toNode)
+            
+#             totalTravel += dist[toNode]
+#             totalNodesVisited += nodesExplored
+            
+#             subPath = reconstruct_path(prev, fromNode, toNode)
+
+#             # Deal with no path found
+#             if subPath != None:
+#                 # Add sub path to main path
+#                 for node in subPath:
+#                     if node == subPath[0]:
+#                         continue
+
+#                     path.append(node)
+#             else:
+#                 violations.append(f"Node {toNode} unreachable from {fromNode}.")
+
+#             nodes.remove(nodes[0])
+            
+#             # If already visited remove from nodes to visit
+#             for priorityList in nodeLists:
+#                 for node in priorityList:
+#                     if node in path:
+#                         priorityList.remove(node)
+
+#     print(violations)
+#     print(path)
+#     print(totalNodesVisited)
+#     print(totalTravel)
+
+#     # Todo: return valid path specs
+#     return  
 
 def astar(graph: Graph, start: int, end: int) -> Tuple[Dict[int, float], Dict[int, Optional[int]], int]:
     """
@@ -409,7 +452,7 @@ def load_graph(nodes_file: str, edges_file: str) -> Graph:
 def main():
     if len(sys.argv) != 6:
         print(f"Usage: {sys.argv[0]} <nodes.csv> <edges.csv> <start_node> <end_node> <algorithm>")
-        print("Algorithms: dijkstra, dijkstraTimeWindow astar, bellman-ford")
+        print("Algorithms: dijkstra, dijkstraTimeWindows, astar, bellman-ford")
         sys.exit(1)
     
     nodes_file = sys.argv[1]
@@ -441,20 +484,23 @@ def main():
             sys.exit(1)
     elif algorithm == "dijkstraTimeWindows":
         print("=== Dijkstra's Algorithm with time windows ===")
-        dist, prev, nodes_explored, violations = dijkstraTimeWindow(graph, start_node, end_node)
+        dist, prev, nodesExplored, violations = dijkstraTimeWindow(graph, start_node, end_node)
     elif algorithm == "multiDestinationPriority":
+        print("=== Multiple Destination Priority Pathing ===")
         """
         Maybe have an option to load destinations from a file or manually????????
         Will eventually ask for the start node via input()
         Will then ask for following destinations to visit
         **** Will ask for priority of each node
         """
-        nodes = [5, 2, 4]
-        priorities = ["HIGH", "LOW", "MEDIUM"]
 
-        temp = (nodes, priorities)
+        dests = [
+            (1, "HIGH"),
+            (2, "MEDIUM"),
+            (6, "LOW")
+        ]
 
-        multiDestinationPriority(graph, start_node, temp)
+        print(multiDestinationPriority(graph, dests))
     else:
         print(f"Unknown algorithm: {algorithm}")
         print("Available algorithms: dijkstra, dijkstraTimeWindows, astar, bellman-ford")
@@ -462,27 +508,33 @@ def main():
     
     # Print results
     if algorithm == "dijkstraTimeWindows" and violations != None:
-        print("No feasable path found satisfying time conditions. Closest path will be provided instead:")
-        printClosestPath(prev, start_node, end_node, dist[end_node], violations)
-    elif False: # CHANGE LATER!!!
+        printClosestPath(prev, start_node, end_node, dist[end_node], nodesExplored, violations)
+    elif algorithm == "multiDestinationPriority":
+        pass
+    else:
         print_path(graph, prev, start_node, end_node, dist[end_node])
-        print(f"Nodes explored: {nodes_explored}")
+        print(f"Nodes explored: {nodesExplored}")
 
 # Prints a path including violations and distance traveled
-def printClosestPath(prev: Dict[int, Optional[int]], start: int, end: int, distance: float, violations: Dict[int, str]):
-    print(f"Path from {start} to {end}: ", end='')
-
+def printClosestPath(prev: Dict[int, Optional[int]], start: int, end: int, distance: float, nodesExplored: int, violations: Dict[int, str]):
     path = reconstruct_path(prev, start, end)
     
-    for node in path:
-        if node == start:
-            print(f"{node} -> ", end='')
-        elif node == end:
-            print(f"{node}({violations[node]} units early/late)")
-        else:
-            print(f"{node}({violations[node]} units early/late) -> ", end='')
+    if path != None:
+        print("No feasable path found satisfying time conditions. Closest path will be provided instead:")
+        print(f"Path from {start} to {end}: ", end='')
 
-    print(f"Total distance: {distance} km")
+        for node in path:
+            if node == start:
+                print(f"{node} -> ", end='')
+            elif node == end:
+                print(f"{node}({violations[node]} units early/late)")
+            else:
+                print(f"{node}({violations[node]} units early/late) -> ", end='')
+
+        print(f"Total distance: {distance} km")
+        print(f"Nodes explored: {nodesExplored}")
+    else:
+        print(f"No possible paths exist from {start} to {end}.")
     
 
 if __name__ == "__main__":
