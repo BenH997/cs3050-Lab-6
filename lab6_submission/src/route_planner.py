@@ -131,7 +131,7 @@ def closestPath(graph: Graph, start: int, end: int):
             if arrival - node.latest > 0:
                 late = arrival - node.latest
 
-            vertViolation = currV + early + late
+            vertViolation = early + late
 
             # Relax if arrival time is better or violation score is better
             if arrival < dist[v] or vertViolation < violations[v]:
@@ -187,7 +187,7 @@ def dijkstraTimeWindow(graph: Graph, start: int, end: int):
     dist, prev, explored2, violations = closestPath(graph, start, end)
     return dist, prev, nodesExplored + explored2, violations
 
-def multiDestinationPriority(graph: Graph, dests, threshold=0.20):
+def multiDestinationPriority(graph: Graph, dests, threshold: float):
     # Separate destinations by priority
     groups = {
         "HIGH": [],
@@ -408,8 +408,8 @@ def loadPriorityNodes(priorityNodesFile):
     return dests            
 
 def main():
-    if len(sys.argv) != 7 and len(sys.argv) != 6:
-        print(f"Usage: {sys.argv[0]} <nodes.csv> <edges.csv> <start_node> <end_node> <algorithm> <priorityNodes> (optional)")
+    if len(sys.argv) != 8 and len(sys.argv) != 7 and len(sys.argv) != 6:
+        print(f"Usage: {sys.argv[0]} <nodes.csv> <edges.csv> <start_node> <end_node> <algorithm> <priorityNodes> (optional) <threshold> (optional, default: 0.20)")
         print("Algorithms: dijkstra, dijkstraTimeWindows, multiDestinationPriority, astar, bellman-ford")
         sys.exit(1)
     
@@ -419,6 +419,7 @@ def main():
     end_node = int(sys.argv[4])
     algorithm = sys.argv[5]
     priorityNodesFile = None
+    threshold = 0.20
 
     # Test for no priorityNodesFile provided
     try:
@@ -426,6 +427,12 @@ def main():
     except IndexError:
         priorityNodesFile = None
     
+    # Test for no threshold provided
+    try:
+        threshold = float(sys.argv[7])
+    except IndexError:
+        threshold = 0.20
+
     # Load graph
     graph = load_graph(nodes_file, edges_file)
     
@@ -459,7 +466,7 @@ def main():
 
         dests = loadPriorityNodes(priorityNodesFile)
         
-        path, dist, violations = multiDestinationPriority(graph, dests)
+        path, dist, violations = multiDestinationPriority(graph, dests, threshold)
     else:
         print(f"Unknown algorithm: {algorithm}")
         print("Available algorithms: dijkstra, dijkstraTimeWindows, astar, bellman-ford")
@@ -487,12 +494,12 @@ def printClosestPath(prev: Dict[int, Optional[int]], start: int, end: int, dista
                 print(f"{node} -> ", end='')
             elif node == end:
                 if violations[node] != 0:
-                    print(f"{node}({violations[node]} units early/late)")
+                    print(f"{node}({violations[node]} units late)")
                 else:
                     print(f"{node}")
             else:
                 if violations[node] != 0:
-                    print(f"{node}({violations[node]} units early/late) -> ", end='')
+                    print(f"{node}({violations[node]} units late) -> ", end='')
                 else:
                     print(f"{node} -> ", end='')
 
